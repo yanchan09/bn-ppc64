@@ -15,6 +15,7 @@
  */
 
 #include <binaryninjaapi.h>
+#include <fmt/core.h>
 
 #include "disasm.h"
 #include "il.h"
@@ -53,11 +54,11 @@ public:
 		switch(op) {
 		case 16:
 			/* bc/bca/bcl/bcla */
-			if (op & 0x2)
+			if (inst & 0x2)
 				dst = SEXT16(inst & 0xfffc);
 			else
 				dst = addr + SEXT16(inst & 0xfffc);
-			if (op & 0x1) {
+			if (inst & 0x1) {
 				result.AddBranch(CallDestination, dst);
 			} else {
 				result.AddBranch(TrueBranch, dst);
@@ -66,11 +67,11 @@ public:
 			return true;
 		case 18:
 			/* b/ba/bl/bla */
-			if (op & 0x2)
+			if (inst & 0x2)
 				dst = SEXT26(inst & 0x3fffffc);
 			else
 				dst = addr + SEXT26(inst & 0x3fffffc);
-			if (op & 0x1)
+			if (inst & 0x1)
 				result.AddBranch(CallDestination, dst);
 			else
 				result.AddBranch(UnconditionalBranch, dst);
@@ -82,7 +83,7 @@ public:
 	virtual bool GetInstructionText(const uint8_t *data, uint64_t addr, size_t &len, std::vector<InstructionTextToken> &result) override {
 		len = 4;
 		PpcDisassembler disasm(&result);
-		return disasm.DecodeInstruction(data);
+		return disasm.DecodeInstruction(data, addr);
 	}
 
 	virtual bool GetInstructionLowLevelIL(const uint8_t *data, uint64_t addr, size_t &len, LowLevelILFunction &il) override {
@@ -92,30 +93,35 @@ public:
 	}
 
 	virtual std::string GetRegisterName(uint32_t reg) override {
-		char buf[16];
-		snprintf(buf, sizeof(buf), "r%d", reg);
-		std::string s = buf;
-		return s;
+		if (reg == 32) {
+			return "ctr";
+		} else {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "r%d", reg);
+			std::string s = buf;
+			return s;
+		}
 	}
 
 	virtual BNRegisterInfo GetRegisterInfo(uint32_t reg) override {
 		BNRegisterInfo i = {0};
-		i.offset = 8 * reg;
+		i.fullWidthRegister = reg;
 		i.size = 8;
+		i.extend = NoExtend;
 		return i;
 	}
 
 	virtual std::vector<uint32_t> GetAllRegisters() override {
-		std::vector<uint32_t> v(32);
-		for (int i = 0; i < 32; i++) {
+		std::vector<uint32_t> v(33);
+		for (int i = 0; i < 33; i++) {
 			v[i] = i;
 		}
 		return v;
 	}
 
 	virtual std::vector<uint32_t> GetFullWidthRegisters() override {
-		std::vector<uint32_t> v(32);
-		for (int i = 0; i < 32; i++) {
+		std::vector<uint32_t> v(33);
+		for (int i = 0; i < 33; i++) {
 			v[i] = i;
 		}
 		return v;
@@ -152,61 +158,84 @@ public:
 	}
 
 	virtual std::vector<uint32_t> GetAllFlags() override {
-		uint32_t max = static_cast<uint32_t>(Flag::_LAST);
-		std::vector<uint32_t> v(max);
-		for (int i = 0; i < max; i++) {
+		std::vector<uint32_t> v(FLAG__LAST);
+		for (int i = 0; i < FLAG__LAST; i++) {
 			v[i] = i;
 		}
 		return v;
 	}
 
 	virtual std::vector<uint32_t> GetAllFlagWriteTypes() override {
-		uint32_t max = static_cast<uint32_t>(FlagWriteType::_LAST);
-		std::vector<uint32_t> v(max);
-		for (int i = 0; i < max; i++) {
+		std::vector<uint32_t> v(FLAG_WRITE__MAX);
+		for (int i = 0; i < FLAG_WRITE__MAX; i++) {
 			v[i] = i;
 		}
 		return v;
 	}
 
 	virtual BNFlagRole GetFlagRole(uint32_t flag, uint32_t semClass = 0) override {
-		Flag fl = static_cast<Flag>(flag);
-		switch (fl) {
-			case Flag::CR0_LT: return NegativeSignFlagRole;
-			case Flag::CR0_GT: return PositiveSignFlagRole;
-			case Flag::CR0_EQ: return ZeroFlagRole;
-			case Flag::CR0_SO: return SpecialFlagRole;
-			case Flag::XER_SO: return SpecialFlagRole;
-			case Flag::XER_OV: return OverflowFlagRole;
-			case Flag::XER_CA: return CarryFlagRole;
+		switch (flag) {
+			case FLAG_CR0_LT: return NegativeSignFlagRole;
+			case FLAG_CR0_GT: return PositiveSignFlagRole;
+			case FLAG_CR0_EQ: return ZeroFlagRole;
+			case FLAG_CR0_SO: return SpecialFlagRole;
+			// todo: CR1 flags
+			case FLAG_XER_SO: return SpecialFlagRole;
+			case FLAG_XER_OV: return OverflowFlagRole;
+			case FLAG_XER_CA: return CarryFlagRole;
 			default: return SpecialFlagRole;
 		}
 	}
 
 	virtual std::string GetFlagName(uint32_t flag) override {
-		Flag fl = static_cast<Flag>(flag);
-		switch (fl) {
-			case Flag::CR0_LT: return "cr0.lt";
-			case Flag::CR0_GT: return "cr0.gt";
-			case Flag::CR0_EQ: return "cr0.eq";
-			case Flag::CR0_SO: return "cr0.so";
-			case Flag::XER_SO: return "xer.so";
-			case Flag::XER_OV: return "xer.ov";
-			case Flag::XER_CA: return "xer.ca";
-			default: return "";
+		char buf[16];
+		switch (flag) {
+			case FLAG_CR0_LT: return "cr0.lt";
+			case FLAG_CR0_GT: return "cr0.gt";
+			case FLAG_CR0_EQ: return "cr0.eq";
+			case FLAG_CR0_SO: return "cr0.so";
+			case FLAG_CR1_FX: return "cr1.fx";
+			case FLAG_CR1_FEX: return "cr1.fex";
+			case FLAG_CR1_VX: return "cr1.vx";
+			case FLAG_CR1_OX: return "cr1.ox";
+			case FLAG_XER_SO: return "xer.so";
+			case FLAG_XER_OV: return "xer.ov";
+			case FLAG_XER_CA: return "xer.ca";
+			default:
+				if (flag < 64) {
+					// CR register
+					return fmt::format("cr{}.{}", flag/4, flag%4);
+				} else {
+					return fmt::format("unknown.{}", flag);
+				}
 		}
 	}
 
 	virtual std::string GetFlagWriteTypeName(uint32_t flag) override {
-		FlagWriteType fl = static_cast<FlagWriteType>(flag);
-		switch (fl) {
-			case FlagWriteType::CR0: return "cr0";
-			default: return "";
+		std::string str;
+		if (flag & FLAG_WRITE_CR0) {
+			str.append("cr0");
 		}
+		if (flag & FLAG_WRITE_CA) {
+			if (str.size()) str.append(".");
+			str.append("ca");
+		}
+		return str;
+	}
+
+	virtual std::vector<uint32_t> GetFlagsWrittenByFlagWriteType(uint32_t flag) override {
+		std::vector<uint32_t> vec;
+		if (flag & FLAG_WRITE_CR0) {
+			vec.insert(vec.end(), {FLAG_CR0_LT, FLAG_CR0_GT, FLAG_CR0_EQ, FLAG_CR0_SO});
+		}
+		if (flag & FLAG_WRITE_CA) {
+			vec.insert(vec.end(), {FLAG_XER_CA});
+		}
+		return vec;
 	}
 
 	virtual ExprId GetFlagWriteLowLevelIL(BNLowLevelILOperation op, size_t size, uint32_t flagWriteType, uint32_t flag, BNRegisterOrConstant *operands, size_t operandCount, LowLevelILFunction &il) override {
-		if (flag == static_cast<uint32_t>(Flag::CR0_SO) || flag == static_cast<uint32_t>(Flag::XER_SO)) {
+		if (flag == FLAG_CR0_SO || flag == FLAG_XER_SO) {
 			ExprId ei = GetDefaultFlagWriteLowLevelIL(op, size, OverflowFlagRole, operands, operandCount, il);
 			// assume ei is something like compute_flag()
 			// We shall replace that with current_flag_value | compute_flag()

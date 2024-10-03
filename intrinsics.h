@@ -16,21 +16,26 @@
 
 #pragma once
 
-enum class Flag : uint32_t {
-	CR0_LT,
-	CR0_GT,
-	CR0_EQ,
-	CR0_SO,
-	XER_SO,
-	XER_OV,
-	XER_CA,
-	_LAST
-};
+#define FLAG_CR0_LT	0
+#define FLAG_CR0_GT	1
+#define FLAG_CR0_EQ	2
+#define FLAG_CR0_SO	3
 
-enum class FlagWriteType : uint32_t {
-	CR0,
-	_LAST
-};
+#define FLAG_CR1_FX	4
+#define FLAG_CR1_FEX	5
+#define FLAG_CR1_VX	6
+#define FLAG_CR1_OX	7
+
+// Flag values 8-63 are rest of the CR register
+
+#define FLAG_XER_SO	64
+#define FLAG_XER_OV	65
+#define FLAG_XER_CA	66
+#define FLAG__LAST	67
+
+#define FLAG_WRITE_CR0	1 << 0
+#define FLAG_WRITE_CA	1 << 1
+#define FLAG_WRITE__MAX	1 << 2
 
 enum class Intrinsic : uint32_t {
 	dcbt,
